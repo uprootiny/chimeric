@@ -1,0 +1,17 @@
+# how to run this:
+
+install poetry and npx and ollama
+
+perhaps if you use nixery or devenv or devbox you might use these specific instructions:
+
+#
+ollama pull llama3
+ollama serve
+
+poetry install
+poetry shell
+python wssdspy.py # runs python websockets server
+
+npm install http-server
+http-server # serves index.html
+
