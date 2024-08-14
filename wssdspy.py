@@ -30,17 +30,23 @@ async def generate_ollama_response(prompt: str, model: str = "llama3", websocket
                 end_time = time.time()
                 latency = int((end_time - start_time) * 1000)
 
+                response_data = ""
                 async for chunk in response.content.iter_chunked(1024):
-                    chunk_data = json.loads(chunk.decode("utf-8"))
-                    chunk_data["latency"] = latency
-                    timestamp = time.strftime("%H:%M:%S", time.localtime())
-                    response_data = {
-                        "text": chunk_data["response"],
-                        "timestamp": timestamp,
-                        "latency": chunk_data["latency"],
-                        "type": "bot"
-                    }
-                    await websocket.send(json.dumps(response_data))
+                    response_data += chunk.decode("utf-8")
+                    try:
+                        chunk_data = json.loads(response_data)
+                        chunk_data["latency"] = latency
+                        timestamp = time.strftime("%H:%M:%S", time.localtime())
+                        response_message = {
+                            "text": chunk_data["response"],
+                            "timestamp": timestamp,
+                            "latency": chunk_data["latency"],
+                            "type": "bot"
+                        }
+                        await websocket.send(json.dumps(response_message))
+                        response_data = ""
+                    except json.JSONDecodeError:
+                        continue
 
     except aiohttp.ClientError as e:
         logging.error(f"Error communicating with Ollama API: {e}")
