@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+</head>
+<body>
+    <div id="metrics-container">
+        <h2>System Metrics</h2>
+        <p><strong>CPU Usage:</strong> <span id="cpu-usage"></span>%</p>
+        <p><strong>Memory Usage:</strong> <span id="memory-usage"></span>%</p>
+        <p><strong>Disk Usage:</strong> <span id="disk-usage"></span>%</p>
+        <p><strong>Network Sent:</strong> <span id="network-sent"></span> bytes</p>
+        <p><strong>Network Received:</strong> <span id="network-recv"></span> bytes</p>
+    </div>
+
+    <script>
+        const ws = new WebSocket('ws://127.0.0.1:7667/ws/metrics');
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            document.getElementById('cpu-usage').textContent = data.cpu_usage;
+            document.getElementById('memory-usage').textContent = data.memory_usage;
+            document.getElementById('disk-usage').textContent = data.disk_usage;
+            document.getElementById('network-sent').textContent = data.network_io.bytes_sent;
+            document.getElementById('network-recv').textContent = data.network_io.bytes_recv;
+        };
+
+        ws.onerror = function(error) {
+            console.error('WebSocket Error:', error);
+        };
+
+        ws.onclose = function() {
+            console.log('WebSocket connection closed');
+        };
+    </script>
+</body>
+</html>
