@@ -1,46 +1,70 @@
 import asyncio
-import websockets
 import json
+import logging
+import os
+import time
+
 import aiohttp
+import websockets
+from dotenv import load_dotenv
 
-# Ollama API Endpoint and Model
-OLLAMA_API_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "llama3"
+# Load environment variables from .env file
+load_dotenv()
 
-async def query_ollama(prompt):
-    """Send a prompt to the Ollama API and return the response."""
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            OLLAMA_API_URL,
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False  # Set to True if you want to handle streaming responses
-            }
-        ) as response:
-            if response.status == 200:
-                result = await response.json()
-                return result.get("response", "No response received")
-            else:
-                return f"Ollama API error: {response.status}"
+# Get the port from environment variables, defaulting to 3333
+PORT = int(os.getenv("PORT", 3333))
 
-async def handle_connection(websocket, path):
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+async def generate_ollama_response(prompt: str, model: str = "llama3", websocket=None):
+    """Sends a prompt to the Ollama API and streams the generated response."""
+    url = "http://localhost:11434/api/generate"
+    data = {"model": model, "prompt": prompt}
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            start_time = time.time()
+            async with session.post(url, json=data) as response:
+                response.raise_for_status()  # Raise an exception for bad status codes
+                end_time = time.time()
+                latency = int((end_time - start_time) * 1000)
+
+                async for chunk in response.content.iter_chunked(1024):
+                    chunk_data = json.loads(chunk.decode("utf-8"))
+                    chunk_data["latency"] = latency
+                    timestamp = time.strftime("%H:%M:%S", time.localtime())
+                    response_data = {
+                        "text": chunk_data["response"],
+                        "timestamp": timestamp,
+                        "latency": chunk_data["latency"],
+                        "type": "bot"
+                    }
+                    await websocket.send(json.dumps(response_data))
+
+    except aiohttp.ClientError as e:
+        logging.error(f"Error communicating with Ollama API: {e}")
+        error_response = {
+            "text": f"Error: {e}",
+            "timestamp": time.strftime("%H:%M:%S", time.localtime()),
+            "latency": None,
+            "type": "error"
+        }
+        await websocket.send(json.dumps(error_response))
+
+async def handle_connection(websocket: websockets.WebSocketServerProtocol, path: str):
+    """Handles incoming WebSocket connections and processes messages."""
+    logging.info(f"New client connected from {websocket.remote_address}")
+
     async for message in websocket:
-        try:
-            # Parse the incoming message
-            plan_piece = message
-            print(f"Received plan piece: {plan_piece}")
+        logging.info(f"Received message from client: {message}")
+        await generate_ollama_response(message, websocket=websocket)
 
-            # Send the plan piece to Ollama and get the response
-            ollama_response = await query_ollama(plan_piece)
+async def main():
+    """Starts the WebSocket server and runs the main event loop."""
+    async with websockets.serve(handle_connection, "localhost", PORT):
+        logging.info(f"WebSocket server started on ws://localhost:{PORT}")
+        await asyncio.Future()  # Run forever
 
-            # Send the result back to the client
-            await websocket.send(f"Ollama Response: {ollama_response}")
-        except Exception as e:
-            print(f"Error processing message: {e}")
-            await websocket.send(f"Error: {str(e)}")
-
-start_server = websockets.serve(handle_connection, "localhost", 8080)
-
-asyncio.get_event_loop().run_until_complete(start_server)
-asyncio.get_event_loop().run_forever()
+if __name__ == "__main__":
+    asyncio.run(main())
